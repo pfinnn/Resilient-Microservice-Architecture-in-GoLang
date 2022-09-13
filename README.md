@@ -8,7 +8,10 @@
 - Two microservices communicating via HTTP
 - Deployed in Docker containers, Orchestrated with kubernetes and running in the Google Cloud
 
-- Resilience Patterns implemented: Retry, Bulkhead, Circuit Breaker
+- Resilience Patterns implemented: 
+    - Retry Pattern
+    - Bulkhead Pattern
+    - Circuit Breaker
 - Unit, Integration and Resilience Tests
 - Continuous Integration Pipeline
 - Toxi Proxy to simulate failures, resilience tests to prove the usefulness of the Resilience Patterns
