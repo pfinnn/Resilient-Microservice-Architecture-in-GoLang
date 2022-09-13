@@ -1,0 +1,106 @@
+stages:
+  - compile-and-test-stage
+  - build-and-push-container-stage
+  - deploy-stage
+
+variables:
+  DOCKER_REGISTRY: "git.haw-hamburg.de:5005/resilient-microservice"
+  # ---------------------------------------------------------------------------
+  MONGODB_VERSION: "4.2"
+  MARIADB_VERSION: "10.5"
+  GOLANG_VERSION: "1.14"
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Build and dockerize services
+# ---------------------------------------------------------------------------------------------------------------------
+
+compile-and-test-stage:
+  stage: compile-and-test-stage
+  image: golang:$GOLANG_VERSION
+  services:
+    - mongo:$MONGODB_VERSION
+    - mariadb:$MARIADB_VERSION
+  variables:
+    MYSQL_ROOT_PASSWORD: "root"
+  before_script:
+    - chmod +x ./smelterservice/scripts/ci/wait-for-mysql/wait-for-mysql.linux
+    - chmod +x ./forgeservice/scripts/ci/wait-for-mysql/wait-for-mysql.linux
+
+  script:
+    - ./smelterservice/scripts/ci/wait-for-mysql/wait-for-mysql.linux 20 "root:root@/"
+    - ./forgeservice/scripts/ci/wait-for-mysql/wait-for-mysql.linux 20 "root:root@/"
+    - make build test
+  artifacts:
+    paths:
+      - ./smelterservice/main
+      - ./forgeservice/main
+      - ./smelterservice/Dockerfile
+      - ./forgeservice/Dockerfile
+      - ./deployments
+
+build-and-push-container-stage-forge:
+  stage: build-and-push-container-stage
+  tags:
+    - dind
+    - docker
+  image: docker:19.03.5
+  services:
+    - docker:19.03.5-dind
+  before_script:
+    - export SERVICE_NAME=forgeservice
+  script:
+    - echo --- Building and pushing docker image for $SERVICE_NAME
+    - docker login -u _json_key --password-stdin https://gcr.io < "$GCP_GITLAB_TOKENFILE"
+    - docker build -t gcr.io/$GCP_PROJECTID/$SERVICE_NAME:$CI_COMMIT_SHA -t gcr.io/$GCP_PROJECTID/$SERVICE_NAME:latest "./$SERVICE_NAME"
+    - docker push gcr.io/$GCP_PROJECTID/$SERVICE_NAME:$CI_COMMIT_SHA
+    - docker push gcr.io/$GCP_PROJECTID/$SERVICE_NAME:latest
+  dependencies:
+    - compile-and-test-stage
+
+build-and-push-container-stage-smelter:
+  stage: build-and-push-container-stage
+  tags:
+    - dind
+    - docker
+  image: docker:19.03.5
+  services:
+    - docker:19.03.5-dind
+  before_script:
+    - export SERVICE_NAME=smelterservice
+  script:
+    - echo --- Building and pushing docker image for $SERVICE_NAME
+    - docker login -u _json_key --password-stdin https://gcr.io < "$GCP_GITLAB_TOKENFILE"
+    - docker build -t gcr.io/$GCP_PROJECTID/$SERVICE_NAME:$CI_COMMIT_SHA -t gcr.io/$GCP_PROJECTID/$SERVICE_NAME:latest "./$SERVICE_NAME"
+    - docker push gcr.io/$GCP_PROJECTID/$SERVICE_NAME:$CI_COMMIT_SHA
+    - docker push gcr.io/$GCP_PROJECTID/$SERVICE_NAME:latest
+  dependencies:
+    - compile-and-test-stage
+
+deploy-stage:
+  stage: deploy-stage
+  image: python:2.7
+  before_script:
+    - echo "deb http://packages.cloud.google.com/apt cloud-sdk-jessie main" | tee /etc/apt/sources.list.d/google-cloud-sdk.list
+    - curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+    - apt-get update
+    - apt-get -qq -y install google-cloud-sdk
+    - apt-get -qq -y install kubectl
+    - export SERVICE_NAME=forgeservice
+  script:
+    - gcloud auth activate-service-account --key-file "$GCP_GITLAB_TOKENFILE"
+    - gcloud config set project $GCP_PROJECTID
+    - gcloud container clusters get-credentials $GCP_CLUSTER --zone europe-west3
+    - kubectl config set-cluster $GCP_CLUSTER
+    - kubectl config set-context --current --namespace=default
+    - sed -i "s/VERSION/$CI_COMMIT_SHA/g" ./deployments/forgeservice-deployment.yaml
+    - sed -i "s/PROJECT_ID/$GCP_PROJECTID/g" ./deployments/forgeservice-deployment.yaml
+    - sed -i "s/VERSION/$CI_COMMIT_SHA/g" ./deployments/smelterservice-deployment.yaml
+    - sed -i "s/PROJECT_ID/$GCP_PROJECTID/g" ./deployments/smelterservice-deployment.yaml
+    - kubectl apply -f ./deployments/
+  dependencies:
+    - build-and-push-container-stage-smelter
+    - build-and-push-container-stage-forge
+  only:
+    - master
+
+

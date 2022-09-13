@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    service: smelterservice
+  name: smelterservice
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      service: smelterservice
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        service: smelterservice
+    spec:
+      containers:
+      - env:
+        - name: SMELTERSERVICE_MYSQLCONNECTION
+          value: root:root@tcp(mariadb)/
+        - name: SMELTERSERVICE_MYSQLDATABASE
+          value: smelter
+        image: gcr.io/PROJECT_ID/smelterservice:VERSION
+        imagePullPolicy: ""
+        name: smelterservice
+        ports:
+        - containerPort: 8081
+        resources:
+          requests:
+            cpu: "25m"
+      restartPolicy: Always
+      serviceAccountName: ""
+      volumes: []
+

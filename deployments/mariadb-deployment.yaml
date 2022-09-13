@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    service: mariadb
+  name: mariadb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      service: mariadb
+  strategy: {}
+  template:
+    metadata:
+      labels:
+        service: mariadb
+    spec:
+      containers:
+      - env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: root
+        image: mariadb:10.5
+        imagePullPolicy: ""
+        name: mariadb
+        ports:
+        - containerPort: 3306
+        resources:
+          requests:
+            cpu: "25m"
+      restartPolicy: Always
+      serviceAccountName: ""
+      volumes: []
+

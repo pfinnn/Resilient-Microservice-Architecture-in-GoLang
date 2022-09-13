@@ -1,0 +1,93 @@
+version: '3'
+
+networks:
+  backendservices:
+
+services:
+
+  # ToxiProxy
+#  toxiproxy:
+#    image: shopify/toxiproxy:1.2.1
+#    container_name: toxiproxy
+#    ports:
+#      - 8474:8474
+#    networks:
+#      - backendservices
+
+  # -------------------------------------------------------
+  # Databases
+  # -------------------------------------------------------
+  mongo:
+    image: mongo:4.2
+    container_name: mongo
+    ports:
+      - 27017:27017
+    networks:
+      - backendservices
+
+  mariadb:
+    image: mariadb:10.5
+    container_name: mariadb
+    ports:
+      - '3306:3306'
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+    networks:
+      - backendservices
+
+  # -------------------------------------------------------
+  # Logging
+  # -------------------------------------------------------
+  fluentd:
+    image: fluent/fluentd:v1.4-2
+    container_name: fluentd
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    volumes:
+      - ./configs/fluentd/:/fluentd/etc
+    networks:
+      - backendservices
+
+  # -------------------------------------------------------
+  # Application services
+  # -------------------------------------------------------
+
+  # !!! run "make build-linux" before building the docker image !!!
+
+  forgeservice:
+    build:
+      context: ./forgeservice
+      dockerfile: Dockerfile
+    container_name: forgeservice
+    ports:
+      - 8080:8080
+    depends_on:
+      - mongo
+      - mariadb
+    environment:
+      - FORGESERVICE_MONGOCONNECTION=mongodb://mongo/forge
+      - FORGESERVICE_MYSQLCONNECTION=root:root@tcp(mariadb)/
+      - FORGESERVICE_MYSQLDATABASE=forge
+      - FORGESERVICE_FLUENTDHOST=fluentd
+      - FORGESERVICE_SMELTERCONNECTION=http://smelterservice:8081
+    networks:
+      - backendservices
+
+  smelterservice:
+    build:
+      context: ./smelterservice
+      dockerfile: Dockerfile
+    container_name: smelterservice
+    ports:
+      - 8081:8081
+    depends_on:
+      - mongo
+      - mariadb
+    environment:
+      - SMELTERSERVICE_MONGOCONNECTION=mongodb://mongo/forge
+      - SMELTERSERVICE_MYSQLCONNECTION=root:root@tcp(mariadb)/
+      - SMELTERSERVICE_MYSQLDATABASE=forge
+      - SMELTERSERVICE_FLUENTDHOST=fluentd
+    networks:
+      - backendservices
